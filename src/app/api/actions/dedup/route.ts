@@ -68,7 +68,7 @@ export const POST = async (req: Request) => {
   const dupAccounts = dups[keys[0]];
 
   const bulkTransfer = await createBulkTransferInstructions(owner, dupAccounts);
-  const bulkClose = createBulkCloseInstructions(owner, dupAccounts);
+  const bulkClose = await createBulkCloseInstructions(owner, dupAccounts);
 
   const transaction = new Transaction({
     feePayer: owner,
@@ -140,15 +140,22 @@ const createBulkTransferInstructions = async (
   return instructions;
 };
 
-const createBulkCloseInstructions = (
+const createBulkCloseInstructions = async (
   owner: PublicKey,
   tokenAccounts: TokenAccount[]
 ) => {
   let instructions: TransactionInstruction[] = [];
 
+  const associatedTokenAddress = await getAssociatedTokenAddress(
+    new PublicKey(tokenAccounts[0].account.data.parsed.info.mint ?? ""),
+    owner,
+    false
+  );
+
   tokenAccounts
     .filter(
-      (account) => account.account.data.parsed.info.tokenAmount.amount === "0"
+      (account) =>
+        account.pubkey.toString() !== associatedTokenAddress.toString()
     )
     .forEach((account) => {
       instructions.push(
