@@ -67,8 +67,23 @@ export const POST = async (req: Request) => {
 
   const dupAccounts = dups[keys[0]];
 
-  const bulkTransfer = await createBulkTransferInstructions(owner, dupAccounts);
-  const bulkClose = await createBulkCloseInstructions(owner, dupAccounts);
+  const associatedTokenAddress = await getAssociatedTokenAddress(
+    new PublicKey(dupAccounts[0].account.data.parsed.info.mint ?? ""),
+    owner,
+    false
+  );
+
+  const bulkTransfer = await createBulkTransferInstructions(
+    owner,
+    associatedTokenAddress,
+    dupAccounts
+  );
+
+  const bulkClose = await createBulkCloseInstructions(
+    owner,
+    associatedTokenAddress,
+    dupAccounts
+  );
 
   const transaction = new Transaction({
     feePayer: owner,
@@ -116,21 +131,16 @@ const getGroupedTokenAccountsByOwner = async (
 
 const createBulkTransferInstructions = async (
   owner: PublicKey,
+  destination: PublicKey,
   tokenAccounts: TokenAccount[]
 ) => {
   let instructions: TransactionInstruction[] = [];
-
-  const associatedTokenAddress = await getAssociatedTokenAddress(
-    new PublicKey(tokenAccounts[0].account.data.parsed.info.mint ?? ""),
-    owner,
-    false
-  );
 
   tokenAccounts.forEach((account) => {
     instructions.push(
       createTransferInstruction(
         account.pubkey,
-        associatedTokenAddress,
+        destination,
         owner,
         account.account.data.parsed.info.tokenAmount.amount
       )
@@ -142,21 +152,13 @@ const createBulkTransferInstructions = async (
 
 const createBulkCloseInstructions = async (
   owner: PublicKey,
+  excluding: PublicKey,
   tokenAccounts: TokenAccount[]
 ) => {
   let instructions: TransactionInstruction[] = [];
 
-  const associatedTokenAddress = await getAssociatedTokenAddress(
-    new PublicKey(tokenAccounts[0].account.data.parsed.info.mint ?? ""),
-    owner,
-    false
-  );
-
   tokenAccounts
-    .filter(
-      (account) =>
-        account.pubkey.toString() !== associatedTokenAddress.toString()
-    )
+    .filter((account) => account.pubkey.toString() !== excluding.toString())
     .forEach((account) => {
       instructions.push(
         createCloseAccountInstruction(account.pubkey, owner, owner, [])
