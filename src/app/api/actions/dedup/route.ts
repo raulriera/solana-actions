@@ -6,22 +6,14 @@ import {
   ActionPostRequest,
 } from "@solana/actions";
 
-import {
-  AccountInfo,
-  clusterApiUrl,
-  Connection,
-  ParsedAccountData,
-  PublicKey,
-  Transaction,
-  TransactionInstruction,
-} from "@solana/web3.js";
+import { Connection, PublicKey, Transaction } from "@solana/web3.js";
 
+import { getAssociatedTokenAddress } from "@solana/spl-token";
 import {
-  TOKEN_PROGRAM_ID,
-  getAssociatedTokenAddress,
-  createCloseAccountInstruction,
-  createTransferInstruction,
-} from "@solana/spl-token";
+  getGroupedTokenAccountsByOwner,
+  createBulkTransferInstructions,
+  createBulkCloseInstructions,
+} from "./instructions";
 
 const headers = createActionHeaders();
 
@@ -29,7 +21,8 @@ export const GET = async (req: Request) => {
   const payload: ActionGetResponse = {
     title: "De-duplicate token accounts",
     icon: "https://ucarecdn.com/7aa46c85-08a4-4bc7-9376-88ec48bb1f43/-/preview/880x864/-/quality/smart/-/format/auto/",
-    description: "Consolidate token accounts into a single one",
+    description:
+      "Consolidate all token accounts of the same mint into a single one",
     label: "De-duplicate",
     type: "action",
     links: {
@@ -94,7 +87,7 @@ export const POST = async (req: Request) => {
   const payload: ActionPostResponse = await createPostResponse({
     fields: {
       transaction,
-      message: `All duplicate accounts from mint ${keys[0]} consolidated and closed`,
+      message: `${dupAccounts.length} accounts from mint ${keys[0]} consolidated and closed (if needed)`,
     },
   });
 
@@ -104,66 +97,3 @@ export const POST = async (req: Request) => {
 };
 
 export const OPTIONS = GET;
-
-type TokenAccount = {
-  pubkey: PublicKey;
-  account: AccountInfo<ParsedAccountData>;
-};
-
-const getGroupedTokenAccountsByOwner = async (
-  owner: PublicKey,
-  connection: Connection
-) => {
-  const tokenAccounts = await connection.getParsedTokenAccountsByOwner(owner, {
-    programId: TOKEN_PROGRAM_ID,
-  });
-
-  return tokenAccounts.value.reduce((acc, item) => {
-    const mint = item.account.data.parsed.info.mint as string;
-
-    if (!acc[mint]) {
-      acc[mint] = [];
-    }
-    acc[mint].push(item);
-    return acc;
-  }, {} as Record<string, TokenAccount[]>);
-};
-
-const createBulkTransferInstructions = async (
-  owner: PublicKey,
-  destination: PublicKey,
-  tokenAccounts: TokenAccount[]
-) => {
-  let instructions: TransactionInstruction[] = [];
-
-  tokenAccounts.forEach((account) => {
-    instructions.push(
-      createTransferInstruction(
-        account.pubkey,
-        destination,
-        owner,
-        account.account.data.parsed.info.tokenAmount.amount
-      )
-    );
-  });
-
-  return instructions;
-};
-
-const createBulkCloseInstructions = async (
-  owner: PublicKey,
-  excluding: PublicKey,
-  tokenAccounts: TokenAccount[]
-) => {
-  let instructions: TransactionInstruction[] = [];
-
-  tokenAccounts
-    .filter((account) => account.pubkey.toString() !== excluding.toString())
-    .forEach((account) => {
-      instructions.push(
-        createCloseAccountInstruction(account.pubkey, owner, owner, [])
-      );
-    });
-
-  return instructions;
-};
